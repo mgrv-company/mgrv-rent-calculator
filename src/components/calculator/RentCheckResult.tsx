@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import {
   loadInput,
   clearInput,
+  isSubmitted,
+  markSubmitted,
   type RentCheckInput,
 } from "@/lib/rent-check-storage";
 import { calcF8Rent, SQM_PER_PYEONG } from "@/lib/rent-pricing";
@@ -33,6 +35,26 @@ export function RentCheckResult() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // iframe 안에서 로드된 경우 부모 ContactStep에 신호 — 이중 iframe(리캐치) 시나리오 대응.
+  // 리캐치 redirect로 iframe 안에 result가 박힌 상태면 ContactStep listener가 router.push로 전환.
+  useEffect(() => {
+    if (window.parent === window) return;
+    const msg = { type: "rent-check-redirect-result" } as const;
+    const origin = window.location.origin;
+    const visited = new Set<Window>();
+    let current: Window | null = window.parent;
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      try {
+        current.postMessage(msg, origin);
+      } catch {
+        /* cross-origin parent — 무시, 다음 ancestor 시도 */
+      }
+      if (current === window.top) break;
+      current = current.parent;
+    }
+  }, []);
+
   useEffect(() => {
     const input = loadInput();
     if (!input) {
@@ -55,6 +77,15 @@ export function RentCheckResult() {
       cancelled = true;
     };
   }, [router]);
+
+  // 결과 산출 직후 Sheets A에 적재 (fire-and-forget, sessionId 멱등)
+  useEffect(() => {
+    if (!computed) return;
+    if (isSubmitted(computed.input.sessionId)) return;
+    void submitLead(computed).then((ok) => {
+      if (ok) markSubmitted(computed.input.sessionId);
+    });
+  }, [computed]);
 
   if (loading) {
     return <LoadingState />;
@@ -96,9 +127,11 @@ async function runAnalysis(
         error: lookupData.error?.message ?? "주소를 인식할 수 없습니다.",
       };
     }
-    const { lawdCd, lat, lng } = lookupData.data;
+    const { lawdCd } = lookupData.data;
 
-    // 2. 주변 시세 분석
+    // 2. 주변 시세 분석 — 구 단위 + 면적·연식 유사도만으로 매칭
+    // V-World 지오코딩(수백 호출)은 임대인 향 MVP에 과함. 좌표 매핑 없이 minScore 5로
+    // 면적·연식 유사도만 가지고 비교군 추출. 정밀 거리 기반 매칭은 향후 옵션.
     const targetAreaSqm = input.areaPyeong * SQM_PER_PYEONG;
     const analyzeRes = await fetch("/api/rent-analyze", {
       method: "POST",
@@ -106,10 +139,9 @@ async function runAnalysis(
       body: JSON.stringify({
         lawdCd,
         siteAddress: input.address,
-        siteLat: lat,
-        siteLng: lng,
         targetAreaSqm,
         months: 12,
+        minScore: 5,
       }),
     });
     const analyzeData = await analyzeRes.json();
@@ -156,6 +188,39 @@ async function runAnalysis(
     return {
       error: err instanceof Error ? err.message : "예기치 못한 오류가 발생했습니다.",
     };
+  }
+}
+
+// ─── Sheets 적재 ──────────────────────────────────────────────────────────────
+
+async function submitLead(c: ComputedResult): Promise<boolean> {
+  try {
+    const judgmentLabel =
+      c.judgment === "low" ? "낮음" : c.judgment === "fair" ? "적정" : "높음";
+    const res = await fetch("/api/rent-leads/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: c.input.sessionId,
+        name: c.input.name,
+        address: c.input.address,
+        areaPyeong: c.input.areaPyeong,
+        depositManwon: c.input.depositManwon,
+        monthlyRentManwon: c.input.monthlyRentManwon,
+        fairRentManwon: c.fairRentManwon,
+        diffPct: c.diffPct,
+        judgmentLabel,
+        perPyeongMedian: c.perPyeongMedian,
+        comparableCount: c.comparableCount,
+        confidenceGrade: c.confidenceGrade,
+        utmSource: c.input.utmSource,
+        utmMedium: c.input.utmMedium,
+        utmCampaign: c.input.utmCampaign,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

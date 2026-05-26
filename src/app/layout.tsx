@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IframeResize } from "@/components/IframeResize";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <IframeResize />
         {children}
       </body>
     </html>

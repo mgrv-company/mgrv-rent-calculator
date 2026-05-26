@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { RentCheckForm } from "@/components/calculator/RentCheckForm";
 
 export default function CalculatorPage() {
@@ -13,7 +14,9 @@ export default function CalculatorPage() {
             <br className="sm:hidden" /> 1분 만에 확인해보세요.
           </p>
         </header>
-        <RentCheckForm />
+        <Suspense fallback={<div className="h-96" />}>
+          <RentCheckForm />
+        </Suspense>
       </div>
     </main>
   );

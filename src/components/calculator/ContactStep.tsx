@@ -2,23 +2,35 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { loadInput } from "@/lib/rent-check-storage";
+import { RecatchEmbed } from "./RecatchEmbed";
 
 /**
- * Step 2 — 리캐치(Re:catch) 리드 폼 임베드 자리.
+ * Step 2 — 리캐치(Re:catch) 리드 폼.
  *
- * Phase 1 (현재): mock — "결과 보기" 버튼 클릭 시 곧바로 /calculator/result 이동.
- * Phase 2 (예정): 리캐치 iframe 임베드 + 폼 제출 detection.
- *   - 리캐치 success URL이 `/calculator/result`로 등록되어 있어 폼 제출 시 자동 라우팅.
- *   - postMessage detection은 보조 안전망으로 추가 예정.
+ * 리캐치 admin에 등록된 success URL `/calculator/result`로 폼 제출 시 redirect.
+ * 리캐치 iframe target 옵션 미지원이라 redirect는 iframe 자체 안에서 일어남.
+ * → result 페이지가 리캐치 iframe 안에 박히는 어색함 방지를 위해
+ *   result 페이지가 mount되면 부모(이 ContactStep)에 postMessage 신호 → router.push로 SPA 전환.
  */
 export function ContactStep() {
   const router = useRouter();
 
-  // 입력 없으면 첫 페이지로 (URL 직접 진입 방어)
   useEffect(() => {
     if (!loadInput()) router.replace("/calculator");
+  }, [router]);
+
+  // 리캐치 redirect 후 iframe 안에 박힌 result 페이지의 postMessage 수신
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      // same-origin만 (보안)
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type === "rent-check-redirect-result") {
+        router.push("/calculator/result");
+      }
+    }
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, [router]);
 
   return (
@@ -32,22 +44,18 @@ export function ContactStep() {
         </p>
       </header>
 
-      <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          [Phase 2 — 리캐치(Re:catch) 리드 폼 임베드 자리]
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          실 배포에서는 리캐치 iframe이 여기에 노출되며, 제출 시 자동으로 결과
-          페이지로 이동합니다.
-        </p>
-      </div>
+      <RecatchEmbed />
 
-      <Button
-        className="w-full h-12 text-base"
-        onClick={() => router.push("/calculator/result")}
-      >
-        [개발용] 결과 보기
-      </Button>
+      {/* 개발용 폴백: postMessage 안 동작 시 수동으로 결과 페이지 진입 */}
+      {process.env.NODE_ENV !== "production" && (
+        <button
+          type="button"
+          onClick={() => router.push("/calculator/result")}
+          className="block w-full text-center text-xs text-muted-foreground underline"
+        >
+          [dev] 결과 보기로 직접 이동
+        </button>
+      )}
     </div>
   );
 }

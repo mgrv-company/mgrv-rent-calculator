@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { saveInput } from "@/lib/rent-check-storage";
 
 export function RentCheckForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [areaPyeong, setAreaPyeong] = useState("");
@@ -39,6 +40,13 @@ export function RentCheckForm() {
       areaPyeong: area,
       depositManwon: deposit,
       monthlyRentManwon: rent,
+      sessionId:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      utmSource: searchParams.get("utm_source") ?? undefined,
+      utmMedium: searchParams.get("utm_medium") ?? undefined,
+      utmCampaign: searchParams.get("utm_campaign") ?? undefined,
     });
 
     router.push("/calculator/contact");
