@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Service Account keys (절대 git에 올리지 말 것)
+secrets/
+*.sa-key.json
+
 # vercel
 .vercel
 
