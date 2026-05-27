@@ -31,33 +31,52 @@ export async function ensureSecretsLoaded(): Promise<void> {
   if (bootstrapPromise) return bootstrapPromise;
 
   bootstrapPromise = (async () => {
-    // 로컬 dev: .env.local로 이미 채워진 경우 skip
-    const allLocal = Object.values(REMOTE_SECRETS).every(
-      (envName) => !!process.env[envName]?.trim(),
-    );
-    if (allLocal) return;
+    try {
+      // 로컬 dev: .env.local로 이미 채워진 경우 skip
+      const allLocal = Object.values(REMOTE_SECRETS).every(
+        (envName) => !!process.env[envName]?.trim(),
+      );
+      if (allLocal) {
+        console.log("[secrets-bootstrap] local env present, skip fetch");
+        return;
+      }
 
-    // Prod: Secret Manager에서 fetch
-    const projectId =
-      process.env.GCLOUD_PROJECT?.trim() ||
-      process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
-      "mgrv-growth-opservice-db";
+      // Prod: Secret Manager에서 fetch
+      const projectId =
+        process.env.GCLOUD_PROJECT?.trim() ||
+        process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+        "mgrv-growth-opservice-db";
 
-    const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-    });
-    const client = await auth.getClient();
-    const tokenResp = await client.getAccessToken();
-    const token = tokenResp.token;
-    if (!token) throw new Error("ADC token 발급 실패");
+      console.log(`[secrets-bootstrap] fetching secrets for project=${projectId}`);
 
-    await Promise.all(
-      Object.entries(REMOTE_SECRETS).map(async ([secretName, envName]) => {
-        if (process.env[envName]?.trim()) return; // 이미 있으면 skip
-        const value = await fetchSecret(projectId, secretName, token);
-        process.env[envName] = value;
-      }),
-    );
+      const auth = new GoogleAuth({
+        scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+      });
+      const client = await auth.getClient();
+      const tokenResp = await client.getAccessToken();
+      const token = tokenResp.token;
+      if (!token) throw new Error("ADC access token 발급 실패");
+
+      console.log("[secrets-bootstrap] ADC token acquired");
+
+      await Promise.all(
+        Object.entries(REMOTE_SECRETS).map(async ([secretName, envName]) => {
+          if (process.env[envName]?.trim()) return;
+          const value = await fetchSecret(projectId, secretName, token);
+          process.env[envName] = value;
+          console.log(
+            `[secrets-bootstrap] loaded ${secretName} (${value.length} chars)`,
+          );
+        }),
+      );
+
+      console.log("[secrets-bootstrap] all secrets loaded");
+    } catch (err) {
+      console.error("[secrets-bootstrap] FATAL:", err);
+      // 한 번 실패하면 cache 비워 다음 호출에 재시도
+      bootstrapPromise = null;
+      throw err;
+    }
   })();
 
   return bootstrapPromise;
