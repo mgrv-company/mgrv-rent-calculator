@@ -1,6 +1,5 @@
 # Firebase App Hosting 백엔드 설정
 # 운영: mgrv-growth-opservice-db (asia-east1)
-# 백엔드 처음 생성 시 GitHub repo 연결 + 첫 배포 자동 트리거.
 
 runConfig:
   cpu: 1
@@ -11,30 +10,42 @@ runConfig:
   timeoutSeconds: 60
 
 env:
-  # 평문 환경변수 (비밀 아님)
+  # ─── Secret Manager 매핑 (secret이 정확한 프로젝트에 있어야 동작) ─────
+  - variable: DATA_GO_KR_API_KEY
+    secret: DATA_GO_KR_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: VWORLD_API_KEY
+    secret: VWORLD_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # ─── 평문 환경변수 (비밀 아님) ─────────────────────────────────────
   - variable: VWORLD_REFERER
     value: https://www.mangrove.city
     availability:
+      - BUILD
       - RUNTIME
 
   - variable: RENT_LEADS_SHEET_ID
     value: 1oa8jnbmYiN4T-5EO1FtOYPoTuvoG9YRHROXlnfXy5C4
     availability:
+      - BUILD
       - RUNTIME
 
   - variable: RENT_LEADS_SHEET_TAB
     value: 계산기_raw
     availability:
+      - BUILD
       - RUNTIME
 
   - variable: GCLOUD_PROJECT
     value: mgrv-growth-opservice-db
     availability:
+      - BUILD
       - RUNTIME
 
-  # ⚠️ DATA_GO_KR_API_KEY · VWORLD_API_KEY는 apphosting.yaml의 secret 매핑 미사용.
-  # Firebase App Hosting의 알려진 platform 버그
-  # (https://github.com/GoogleCloudPlatform/buildpacks/issues/561) 우회를 위해
-  # 코드에서 직접 Secret Manager API 호출 (src/lib/secrets-bootstrap.ts).
-  # Runtime SA(firebase-app-hosting-compute@...)가 secret access 권한 보유.
-  # Sheets API 인증은 동일 runtime SA의 ADC 자동 처리.
+# secrets-bootstrap.ts는 fallback으로 유지 — secret 매핑 실패 시 동작.
