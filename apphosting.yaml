@@ -1,9 +1,8 @@
 # Firebase App Hosting 백엔드 설정
-# 운영: mgrv-growth-opservice-db (asia-northeast3)
+# 운영: mgrv-growth-opservice-db (asia-east1)
 # 백엔드 처음 생성 시 GitHub repo 연결 + 첫 배포 자동 트리거.
 
 runConfig:
-  # Next.js 16 + Turbopack 빌드 + 한국 IP 안정성 (MOLIT/V-World)
   cpu: 1
   memoryMiB: 512
   maxInstances: 10
@@ -12,39 +11,30 @@ runConfig:
   timeoutSeconds: 60
 
 env:
-  # ─── 외부 API key (Cloud Secret Manager) ────────────────────────────
-  - variable: DATA_GO_KR_API_KEY
-    secret: DATA_GO_KR_API_KEY
-    availability:
-      - BUILD
-      - RUNTIME
-
-  - variable: VWORLD_API_KEY
-    secret: VWORLD_API_KEY
-    availability:
-      - BUILD
-      - RUNTIME
-
-  # ─── 평문 환경변수 (비밀 아님) ─────────────────────────────────────
+  # 평문 환경변수 (비밀 아님)
   - variable: VWORLD_REFERER
     value: https://www.mangrove.city
     availability:
-      - BUILD
       - RUNTIME
 
   - variable: RENT_LEADS_SHEET_ID
     value: 1oa8jnbmYiN4T-5EO1FtOYPoTuvoG9YRHROXlnfXy5C4
     availability:
-      - BUILD
       - RUNTIME
 
   - variable: RENT_LEADS_SHEET_TAB
     value: 계산기_raw
     availability:
-      - BUILD
       - RUNTIME
 
-  # ─── Sheets 인증 ────────────────────────────────────────────────────
-  # Firebase App Hosting runtime SA (firebase-app-hosting-compute@...)가
-  # ADC 자동 인증. 별도 SA 키 파일 불필요.
-  # → 백엔드 생성 후 그 SA 이메일을 Sheets A 편집자로 추가 필요.
+  - variable: GCLOUD_PROJECT
+    value: mgrv-growth-opservice-db
+    availability:
+      - RUNTIME
+
+  # ⚠️ DATA_GO_KR_API_KEY · VWORLD_API_KEY는 apphosting.yaml의 secret 매핑 미사용.
+  # Firebase App Hosting의 알려진 platform 버그
+  # (https://github.com/GoogleCloudPlatform/buildpacks/issues/561) 우회를 위해
+  # 코드에서 직접 Secret Manager API 호출 (src/lib/secrets-bootstrap.ts).
+  # Runtime SA(firebase-app-hosting-compute@...)가 secret access 권한 보유.
+  # Sheets API 인증은 동일 runtime SA의 ADC 자동 처리.
