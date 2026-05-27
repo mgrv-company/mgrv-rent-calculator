@@ -16,27 +16,32 @@ env:
   - variable: DATA_GO_KR_API_KEY
     secret: DATA_GO_KR_API_KEY
     availability:
+      - BUILD
       - RUNTIME
 
   - variable: VWORLD_API_KEY
     secret: VWORLD_API_KEY
     availability:
+      - BUILD
       - RUNTIME
 
   # ─── 평문 환경변수 (비밀 아님) ─────────────────────────────────────
   - variable: VWORLD_REFERER
     value: https://www.mangrove.city
     availability:
+      - BUILD
       - RUNTIME
 
   - variable: RENT_LEADS_SHEET_ID
     value: 1oa8jnbmYiN4T-5EO1FtOYPoTuvoG9YRHROXlnfXy5C4
     availability:
+      - BUILD
       - RUNTIME
 
   - variable: RENT_LEADS_SHEET_TAB
     value: 계산기_raw
     availability:
+      - BUILD
       - RUNTIME
 
   # ─── Sheets 인증 ────────────────────────────────────────────────────
