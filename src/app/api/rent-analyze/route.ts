@@ -258,8 +258,8 @@ export async function POST(
   let geocodingNote: string | undefined;
 
   async function runGeocode() {
-    const vworldApiKey = process.env.VWORLD_API_KEY?.trim();
-    if (vworldApiKey && siteLat && siteLng && addressPrefix) {
+    const kakaoApiKey = process.env.KAKAO_REST_API_KEY?.trim();
+    if (kakaoApiKey && siteLat && siteLng && addressPrefix) {
       const monthlyOnly = rawTransactions.filter(
         (tx) => parsePrice(tx.monthlyRent) > 0,
       );
@@ -274,7 +274,7 @@ export async function POST(
       } catch {
         geocodingNote = "지오코딩 처리 중 오류 발생 — 거리 배점 제외";
       }
-    } else if (!process.env.VWORLD_API_KEY) {
+    } else if (!process.env.KAKAO_REST_API_KEY) {
       geocodingNote = "지오코딩 API 키 미설정 — 거리 배점 제외";
     }
   }

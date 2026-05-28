@@ -11,27 +11,27 @@ runConfig:
 
 env:
   # ─── Secret Manager 매핑 ──────────────────────────────────────────────
-  # 이 키들은 API 라우트(런타임)에서만 쓰임 → RUNTIME-only.
-  # BUILD availability를 주면 빌드 SA가 secretAccessor 권한을 요구해
-  # 빌드 시 PermissionDenied 발생 (buildpacks #561 함정). 빌드는 키 불필요.
+  # 모두 API 라우트(런타임)에서만 쓰임 → RUNTIME-only.
+  # BUILD availability 주면 빌드 SA가 secretAccessor 권한을 요구해
+  # 빌드 시 PermissionDenied 발생 (buildpacks #561 함정).
   # 사전 1회: firebase apphosting:secrets:grantaccess <SECRET> --backend <BACKEND>
   - variable: DATA_GO_KR_API_KEY
     secret: DATA_GO_KR_API_KEY
     availability:
       - RUNTIME
 
-  - variable: VWORLD_API_KEY
-    secret: VWORLD_API_KEY
+  # 주소 검색·지오코딩 — 카카오 로컬 API.
+  # V-World는 외국 IP(Cloud Run asia-east1)를 게이트웨이 단에서 502로 거절해서 사용 불가.
+  # 카카오는 외국 IP 차단 없음 + 한도 충분(10만건/일/API).
+  - variable: KAKAO_REST_API_KEY
+    secret: KAKAO_REST_API_KEY
     availability:
       - RUNTIME
+
+  # V-World 시크릿은 retained — 코드 미사용이지만 시크릿 자체는 보존(롤백 대비).
+  # 시크릿 매핑은 제거 — 코드가 안 읽음.
 
   # ─── 평문 환경변수 (비밀 아님) ─────────────────────────────────────
-  - variable: VWORLD_REFERER
-    value: https://www.mangrove.city
-    availability:
-      - BUILD
-      - RUNTIME
-
   - variable: RENT_LEADS_SHEET_ID
     value: 1oa8jnbmYiN4T-5EO1FtOYPoTuvoG9YRHROXlnfXy5C4
     availability:

@@ -12,8 +12,7 @@ export async function GET() {
     env: {
       GCLOUD_PROJECT: process.env.GCLOUD_PROJECT ?? null,
       hasMolitKey: !!process.env.DATA_GO_KR_API_KEY?.trim(),
-      hasVworldKey: !!process.env.VWORLD_API_KEY?.trim(),
-      vworldReferer: process.env.VWORLD_REFERER ?? null,
+      hasKakaoKey: !!process.env.KAKAO_REST_API_KEY?.trim(),
       sheetId: process.env.RENT_LEADS_SHEET_ID ?? null,
       nodeVersion: process.version,
     },

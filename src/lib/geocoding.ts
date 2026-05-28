@@ -1,14 +1,6 @@
 import type { MolitTransaction } from "./molit-parser";
 import { apiCache, GEO_CACHE_TTL } from "./api-cache";
 
-// ─── V-World Referer (env 기반) ───────────────────────────────────────────────
-//
-// V-World 인증키는 발급 시 등록 도메인(Whitelist)을 강제 검증하므로,
-// 환경별로 다른 도메인을 박을 수 있게 env로 분리. default는 prod 도메인.
-// App Hosting이 VWORLD_REFERER를 런타임 env로 주입(apphosting.yaml).
-export const VWORLD_REFERER =
-  process.env.VWORLD_REFERER ?? "https://www.mangrove.city";
-
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
 export interface Coordinates {
@@ -103,44 +95,43 @@ export function expandByRadius<T>(
   return { items: allWithCoords, radiusUsedKm: maxRadius, radiusStep: -1 };
 }
 
-// ─── V-World 지오코딩 ─────────────────────────────────────────────────────────
+// ─── 카카오 로컬 지오코딩 ─────────────────────────────────────────────────────
+//
+// V-World 대체. V-World는 외국 IP(Cloud Run asia-east1)에서 502로 거절돼서 사용 불가.
+// 카카오 로컬 "주소로 좌표 변환" API — 외국 IP 차단 없음 + 한도 10만건/일.
 
 const GEOCODE_TIMEOUT_MS = 5_000;
 const BATCH_CONCURRENCY = 6;
+const KAKAO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json";
 
 export async function geocodeBuilding(
   fullAddress: string,
 ): Promise<Coordinates | null> {
-  const apiKey = process.env.VWORLD_API_KEY?.trim();
+  const apiKey = process.env.KAKAO_REST_API_KEY?.trim();
   if (!apiKey) return null;
 
-  // 지번(PARCEL) → 도로명(ROAD) 순서로 시도
-  for (const addrType of ["PARCEL", "ROAD"] as const) {
-    const url = new URL("https://api.vworld.kr/req/address");
-    url.searchParams.set("service", "address");
-    url.searchParams.set("request", "getCoord");
-    url.searchParams.set("key", apiKey);
-    url.searchParams.set("type", addrType);
-    url.searchParams.set("address", fullAddress);
-    url.searchParams.set("format", "json");
-    url.searchParams.set("crs", "EPSG:4326");
+  const url = new URL(KAKAO_ADDRESS_URL);
+  url.searchParams.set("query", fullAddress);
+  url.searchParams.set("size", "1");
 
-    try {
-      const res = await fetch(url.toString(), {
-        signal: AbortSignal.timeout(GEOCODE_TIMEOUT_MS),
-        headers: { Referer: VWORLD_REFERER },
-      });
-      const data = await res.json();
-
-      if (data.response?.status === "OK" && data.response.result?.point) {
-        const { x, y } = data.response.result.point;
-        return { lat: parseFloat(y), lng: parseFloat(x) };
-      }
-    } catch {
-      // 이 타입으로 실패 → 다음 타입 시도
-    }
+  try {
+    const res = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(GEOCODE_TIMEOUT_MS),
+      headers: { Authorization: `KakaoAK ${apiKey}` },
+    });
+    if (!res.ok) return null;
+    const data: {
+      documents?: { x: string; y: string }[];
+    } = await res.json();
+    const doc = data.documents?.[0];
+    if (!doc) return null;
+    const lat = parseFloat(doc.y);
+    const lng = parseFloat(doc.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** 유니크 건물 추출 후 배치 지오코딩 */

@@ -1,14 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import dns from "node:dns";
-import { extractLawdCd, lawdCdToGuName } from "@/lib/lawd-codes";
-import { VWORLD_REFERER } from "@/lib/geocoding";
-
-// IPv6 dual-stack 이슈 우회 — Cloud Run asia-east1 → api.vworld.kr 호출 시
-// AAAA가 우선 해석되면 일부 환경에서 라우팅 죽음 → IPv4 우선으로 강제.
-// node:dns의 setDefaultResultOrder는 module load 시 한 번만 호출하면 됨.
-if (typeof dns.setDefaultResultOrder === "function") {
-  dns.setDefaultResultOrder("ipv4first");
-}
+import { lawdCdToGuName } from "@/lib/lawd-codes";
 
 export interface AddressInfo {
   jibun: string;
@@ -25,136 +16,64 @@ interface AddressLookupResponse {
   error?: { code: string; message: string };
 }
 
-const VWORLD_TIMEOUT_MS = 10_000;
-const VWORLD_SEARCH_URL = "https://api.vworld.kr/req/search";
-const VWORLD_ADDRESS_URL = "https://api.vworld.kr/req/address";
+// ─── 카카오 로컬 API (주소 검색) ─────────────────────────────────────────────
+//
+// V-World 대체. V-World는 외국 IP(Cloud Run asia-east1)에서 502로 거절돼서 사용 불가.
+// 카카오는 외국 IP 차단 없음 + REST API 키 + Authorization 헤더만으로 인증.
+//
+// 한 번 호출로 jibun · road name · b_code(10자리 법정동코드) · 좌표 다 받음
+// → V-World처럼 search + reverseGeocode 2단계 폴백 불필요.
 
-interface VworldSearchItem {
-  id: string;
-  title: string;
-  category: "parcel" | "road";
+const KAKAO_TIMEOUT_MS = 5_000;
+const KAKAO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json";
+
+interface KakaoAddressDocument {
+  address_name: string;
+  address_type: string;
+  x: string; // lng
+  y: string; // lat
   address: {
-    parcel?: string;
-    road?: string;
-    zipcode?: string;
-    bldnm?: string;
-  };
-  point: { x: string; y: string };
+    address_name: string;
+    region_1depth_name: string;
+    region_2depth_name: string;
+    region_3depth_name: string;
+    b_code: string; // 10자리 법정동코드
+  } | null;
+  road_address: {
+    address_name: string;
+  } | null;
 }
 
-// 디버그 모드를 위한 V-World 호출 결과 캡처
-interface VworldDebug {
-  category: string;
-  httpStatus?: number;
-  vworldStatus?: string;
-  rawBody?: string;
-  fetchError?: string;
+interface KakaoAddressResponse {
+  meta?: { total_count: number };
+  documents?: KakaoAddressDocument[];
 }
 
-async function searchVworld(
+async function searchKakaoAddress(
   query: string,
-  category: "parcel" | "road",
   apiKey: string,
-  debugSink?: VworldDebug[],
-): Promise<VworldSearchItem | null> {
-  const url = new URL(VWORLD_SEARCH_URL);
-  url.searchParams.set("service", "search");
-  url.searchParams.set("request", "search");
-  url.searchParams.set("version", "2.0");
-  url.searchParams.set("crs", "EPSG:4326");
-  url.searchParams.set("size", "1");
-  url.searchParams.set("page", "1");
-  url.searchParams.set("type", "ADDRESS");
-  url.searchParams.set("category", category);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("errorformat", "json");
+): Promise<KakaoAddressDocument | null> {
+  const url = new URL(KAKAO_ADDRESS_URL);
   url.searchParams.set("query", query);
-  url.searchParams.set("key", apiKey);
-
-  const dbg: VworldDebug = { category };
-  try {
-    const res = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(VWORLD_TIMEOUT_MS),
-      headers: { Referer: VWORLD_REFERER },
-    });
-    dbg.httpStatus = res.status;
-    const text = await res.text();
-    dbg.rawBody = text.slice(0, 500);
-    const data: {
-      response?: {
-        status?: string;
-        result?: { items?: VworldSearchItem[] };
-      };
-    } = JSON.parse(text);
-    dbg.vworldStatus = data.response?.status;
-    if (data.response?.status === "OK" && data.response.result?.items?.[0]) {
-      debugSink?.push(dbg);
-      return data.response.result.items[0];
-    }
-  } catch (err) {
-    if (err instanceof Error) {
-      const cause = (err as Error & { cause?: unknown }).cause;
-      const causeStr = cause
-        ? typeof cause === "object"
-          ? JSON.stringify(cause, Object.getOwnPropertyNames(cause)).slice(0, 300)
-          : String(cause).slice(0, 300)
-        : "";
-      dbg.fetchError = `${err.name}: ${err.message}${causeStr ? ` | cause: ${causeStr}` : ""}`;
-    } else {
-      dbg.fetchError = String(err);
-    }
-  }
-  debugSink?.push(dbg);
-  return null;
-}
-
-/**
- * V-World 역지오코딩 (좌표 → 시군구코드).
- * search 응답에 구 이름이 없을 때 보조 경로로 사용.
- * mass-study/backend/routers/parcel.py `_get_pnu_from_geocoder` 참고.
- *
- * @returns level4LC 5자리 시군구코드 (예: 11680=강남, 11440=마포). 실패 시 null.
- */
-async function reverseGeocode(
-  lat: number,
-  lng: number,
-  apiKey: string,
-): Promise<string | null> {
-  const url = new URL(VWORLD_ADDRESS_URL);
-  url.searchParams.set("service", "address");
-  url.searchParams.set("request", "getAddress");
-  url.searchParams.set("type", "PARCEL");
-  // V-World point 포맷: "경도,위도" 순서 (lng,lat)
-  url.searchParams.set("point", `${lng},${lat}`);
-  url.searchParams.set("crs", "EPSG:4326");
-  url.searchParams.set("format", "json");
-  url.searchParams.set("key", apiKey);
+  url.searchParams.set("size", "1");
 
   try {
     const res = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(VWORLD_TIMEOUT_MS),
-      headers: { Referer: VWORLD_REFERER },
+      signal: AbortSignal.timeout(KAKAO_TIMEOUT_MS),
+      headers: { Authorization: `KakaoAK ${apiKey}` },
     });
-    const data = await res.json();
-    // V-World가 HTTP 200으로 ERROR status를 돌려주는 케이스 명시 가드
-    if (data?.response?.status !== "OK") return null;
-    // level4LC는 10자리 법정동코드 (시군구 5 + 법정동 5). 시군구 5자리만 추출.
-    const level4LC = data.response.result?.[0]?.structure?.level4LC;
-    if (typeof level4LC === "string" && level4LC.length === 10) {
-      return level4LC.slice(0, 5);
-    }
+    if (!res.ok) return null;
+    const data: KakaoAddressResponse = await res.json();
+    return data.documents?.[0] ?? null;
   } catch {
-    // 실패 시 null 반환 (호출 측에서 OUT_OF_SEOUL 처리)
+    return null;
   }
-  return null;
 }
 
 export async function GET(
   req: NextRequest,
 ): Promise<NextResponse<AddressLookupResponse>> {
   const q = req.nextUrl.searchParams.get("q")?.trim();
-  const debugMode = req.nextUrl.searchParams.get("debug") === "1";
-  const debugSink: VworldDebug[] = debugMode ? [] : [];
   if (!q) {
     return NextResponse.json(
       {
@@ -168,26 +87,22 @@ export async function GET(
     );
   }
 
-  const apiKey = process.env.VWORLD_API_KEY?.trim();
+  const apiKey = process.env.KAKAO_REST_API_KEY?.trim();
   if (!apiKey) {
     return NextResponse.json(
       {
         status: "ERROR",
         error: {
           code: "MISSING_API_KEY",
-          message: "VWORLD_API_KEY가 설정되지 않았습니다.",
+          message: "KAKAO_REST_API_KEY가 설정되지 않았습니다.",
         },
       },
       { status: 500 },
     );
   }
 
-  // PARCEL → ROAD 순 폴백 (PRD §F1)
-  let item = await searchVworld(q, "parcel", apiKey, debugSink);
-  if (!item) {
-    item = await searchVworld(q, "road", apiKey, debugSink);
-  }
-  if (!item) {
+  const doc = await searchKakaoAddress(q, apiKey);
+  if (!doc || !doc.address) {
     return NextResponse.json(
       {
         status: "ERROR",
@@ -195,20 +110,17 @@ export async function GET(
           code: "NOT_FOUND",
           message:
             "주소를 찾을 수 없습니다. 지번 또는 도로명 형식을 확인하세요.",
-          ...(debugMode ? { debug: debugSink } : {}),
         },
-      } as AddressLookupResponse,
+      },
       { status: 404 },
     );
   }
 
-  const jibun = item.address.parcel ?? item.title ?? "";
-  const roadName = item.address.road ?? "";
-  const fullAddress = jibun || roadName;
-  const lat = parseFloat(item.point.y);
-  const lng = parseFloat(item.point.x);
+  const jibun = doc.address.address_name;
+  const roadName = doc.road_address?.address_name ?? "";
+  const lat = parseFloat(doc.y);
+  const lng = parseFloat(doc.x);
 
-  // V-World 응답이 비정상이라 좌표 파싱 실패 시 NaN을 응답에 흘리지 않음
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
       {
@@ -223,20 +135,10 @@ export async function GET(
     );
   }
 
-  // 1차: search 응답 문자열에서 구 이름 추출
-  let lawdCd = extractLawdCd(fullAddress);
-
-  // 2차 폴백: 좌표 → 역지오코딩으로 시군구코드 직접 획득
-  // (도로명 입력 시 search 응답에 구 이름이 없는 경우 대응)
-  if (!lawdCd) {
-    const reversed = await reverseGeocode(lat, lng, apiKey);
-    if (reversed && lawdCdToGuName(reversed)) {
-      // 서울 25개 구 매칭 시에만 채택 (서울 외는 SEOUL_GU_CODES에 없음 → null)
-      lawdCd = reversed;
-    }
-  }
-
-  if (!lawdCd) {
+  // b_code(10자리) → 시군구 5자리 lawdCd
+  const lawdCd = doc.address.b_code?.slice(0, 5);
+  const guName = lawdCd ? lawdCdToGuName(lawdCd) : null;
+  if (!lawdCd || !guName) {
     return NextResponse.json(
       {
         status: "ERROR",
@@ -249,7 +151,6 @@ export async function GET(
       { status: 422 },
     );
   }
-  const guName = lawdCdToGuName(lawdCd) ?? "";
 
   return NextResponse.json({
     status: "OK",
@@ -257,7 +158,7 @@ export async function GET(
       jibun,
       roadName,
       lawdCd,
-      sigunguName: guName ? `서울특별시 ${guName}` : "",
+      sigunguName: `서울특별시 ${guName}`,
       lat,
       lng,
     },
