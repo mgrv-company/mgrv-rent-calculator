@@ -27,7 +27,8 @@ export function RentCheckForm() {
     const rent = parseFloat(monthlyRentManwon);
 
     if (!name.trim()) return setError("이름을 입력해주세요.");
-    if (!address.trim()) return setError("자산 주소를 입력해주세요.");
+    if (!address.trim())
+      return setError("주소 검색 버튼으로 주소를 선택해주세요.");
     if (!area || area <= 0 || area > 200)
       return setError("전용면적은 1~200평 사이여야 합니다.");
     if (isNaN(deposit) || deposit < 0 || deposit > 100000)
@@ -75,9 +76,9 @@ export function RentCheckForm() {
             id="address"
             type="text"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="[주소 검색] 클릭 (또는 직접 입력)"
-            className="flex-1"
+            placeholder="[주소 검색] 버튼을 눌러주세요"
+            className="flex-1 cursor-default"
+            readOnly
             required
           />
           <DaumPostcodeButton
@@ -86,7 +87,7 @@ export function RentCheckForm() {
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          검색 권장. 동·호수는 검색 후 직접 추가 입력하세요.
+          검색을 통해 확인된 주소만 입력 가능합니다.
         </p>
       </div>
 
