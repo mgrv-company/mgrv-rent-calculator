@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { saveInput } from "@/lib/rent-check-storage";
+import { DaumPostcodeButton } from "./DaumPostcodeButton";
 
 export function RentCheckForm() {
   const router = useRouter();
@@ -69,16 +70,23 @@ export function RentCheckForm() {
 
       <div className="space-y-2">
         <Label htmlFor="address">자산 주소</Label>
-        <Input
-          id="address"
-          type="text"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="예: 서울 중구 충무로3가 56-16"
-          required
-        />
+        <div className="flex gap-2">
+          <Input
+            id="address"
+            type="text"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="[주소 검색] 클릭 (또는 직접 입력)"
+            className="flex-1"
+            required
+          />
+          <DaumPostcodeButton
+            onSelect={(addr) => setAddress(addr)}
+            className="shrink-0"
+          />
+        </div>
         <p className="text-xs text-muted-foreground">
-          지번 또는 도로명 주소 모두 가능 (서울 25개 구 지원)
+          검색 권장. 동·호수는 검색 후 직접 추가 입력하세요.
         </p>
       </div>
 
