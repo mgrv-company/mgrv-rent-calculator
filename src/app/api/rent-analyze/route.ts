@@ -14,7 +14,6 @@ import {
   type PricingConfidence,
 } from "@/lib/rent-pricing";
 import { isWriteFrozen } from "@/lib/maintenance";
-import { ensureSecretsLoaded } from "@/lib/secrets-bootstrap";
 
 // ─── 요청·응답 타입 ──────────────────────────────────────────────────────────
 
@@ -76,7 +75,6 @@ interface RentAnalyzeResponse {
 export async function POST(
   req: NextRequest,
 ): Promise<NextResponse<RentAnalyzeResponse>> {
-  await ensureSecretsLoaded();
   if (await isWriteFrozen()) {
     return NextResponse.json(
       {

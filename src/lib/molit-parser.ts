@@ -125,6 +125,8 @@ export function parseMolitError(xml: string): MolitApiError | null {
 
 // secret store(Cloud Secret Manager 등)가 trailing newline을 포함해 등록되는 경우가 있어
 // 키 단위 trim 필수 (2026-04-29 prod V-World INVALID_KEY 함정 사건).
+// App Hosting이 시크릿을 런타임 env로 주입 → process.env가 컨테이너 시작 시점에
+// 채워지므로 module-level 평가로 충분.
 const apiKeys = (
   process.env.DATA_GO_KR_API_KEYS ??
   process.env.DATA_GO_KR_API_KEY ??
@@ -133,6 +135,7 @@ const apiKeys = (
   .split(",")
   .map((k) => k.trim())
   .filter(Boolean);
+
 let keyIndex = 0;
 
 /** API 키가 1개 이상 등록되어 있는지 (side effect 없음) */

@@ -2,16 +2,22 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { loadInput } from "@/lib/rent-check-storage";
 import { RecatchEmbed } from "./RecatchEmbed";
+
+const RECATCH_ORIGIN = "https://mgrv.recatch.cc";
 
 /**
  * Step 2 — 리캐치(Re:catch) 리드 폼.
  *
- * 리캐치 admin에 등록된 success URL `/calculator/result`로 폼 제출 시 redirect.
- * 리캐치 iframe target 옵션 미지원이라 redirect는 iframe 자체 안에서 일어남.
- * → result 페이지가 리캐치 iframe 안에 박히는 어색함 방지를 위해
- *   result 페이지가 mount되면 부모(이 ContactStep)에 postMessage 신호 → router.push로 SPA 전환.
+ * 자동 라우팅 전략 (3중 폴백):
+ * 1. 리캐치 admin redirect URL → iframe 안에 우리 result 페이지가 박힘 → RentCheckResult가
+ *    부모(ContactStep)에 postMessage 신호 → router.push로 SPA 전환
+ * 2. 리캐치 자체 postMessage (form submit 이벤트) — 일반적 type 패턴 매칭
+ * 3. 사용자가 직접 [결과 보기] 버튼 클릭 (수동 폴백, 항상 표시)
+ *
+ * localhost dev에서는 (1)이 prod URL이라 동작 안 함 → (3) 버튼으로 폴백 필요.
  */
 export function ContactStep() {
   const router = useRouter();
@@ -20,13 +26,37 @@ export function ContactStep() {
     if (!loadInput()) router.replace("/calculator");
   }, [router]);
 
-  // 리캐치 redirect 후 iframe 안에 박힌 result 페이지의 postMessage 수신
   useEffect(() => {
     function handler(e: MessageEvent) {
-      // same-origin만 (보안)
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type === "rent-check-redirect-result") {
+      // dev 디버깅: 어떤 message가 오는지 콘솔에 표시
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[ContactStep] message received:", e.origin, e.data);
+      }
+
+      // 패턴 1: 우리 result 페이지가 iframe 안에서 보낸 신호 (same-origin)
+      if (
+        e.origin === window.location.origin &&
+        e.data?.type === "rent-check-redirect-result"
+      ) {
         router.push("/calculator/result");
+        return;
+      }
+
+      // 패턴 2: 리캐치 자체가 보내는 폼 제출 완료 신호 (있다면)
+      if (e.origin === RECATCH_ORIGIN) {
+        const raw = e.data;
+        const type =
+          typeof raw === "string"
+            ? raw
+            : ((raw?.type ?? raw?.event ?? raw?.action ?? "") as string);
+        const lower = type.toLowerCase();
+        if (
+          lower.includes("submit") ||
+          lower.includes("complete") ||
+          lower.includes("success")
+        ) {
+          router.push("/calculator/result");
+        }
       }
     }
     window.addEventListener("message", handler);
@@ -46,16 +76,20 @@ export function ContactStep() {
 
       <RecatchEmbed />
 
-      {/* 개발용 폴백: postMessage 안 동작 시 수동으로 결과 페이지 진입 */}
-      {process.env.NODE_ENV !== "production" && (
-        <button
+      <div className="border-t pt-4 space-y-3 text-center">
+        <p className="text-xs text-muted-foreground">
+          폼 제출이 완료되었는데 결과 페이지가 자동으로 나타나지 않는다면 아래
+          버튼을 눌러주세요.
+        </p>
+        <Button
           type="button"
+          variant="outline"
+          className="w-full"
           onClick={() => router.push("/calculator/result")}
-          className="block w-full text-center text-xs text-muted-foreground underline"
         >
-          [dev] 결과 보기로 직접 이동
-        </button>
-      )}
+          결과 보기
+        </Button>
+      </div>
     </div>
   );
 }

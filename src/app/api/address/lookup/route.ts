@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractLawdCd, lawdCdToGuName } from "@/lib/lawd-codes";
 import { VWORLD_REFERER } from "@/lib/geocoding";
-import { ensureSecretsLoaded } from "@/lib/secrets-bootstrap";
 
 export interface AddressInfo {
   jibun: string;
@@ -118,7 +117,6 @@ async function reverseGeocode(
 export async function GET(
   req: NextRequest,
 ): Promise<NextResponse<AddressLookupResponse>> {
-  await ensureSecretsLoaded();
   const q = req.nextUrl.searchParams.get("q")?.trim();
   if (!q) {
     return NextResponse.json(

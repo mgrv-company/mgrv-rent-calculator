@@ -10,17 +10,19 @@ runConfig:
   timeoutSeconds: 60
 
 env:
-  # ─── Secret Manager 매핑 (secret이 정확한 프로젝트에 있어야 동작) ─────
+  # ─── Secret Manager 매핑 ──────────────────────────────────────────────
+  # 이 키들은 API 라우트(런타임)에서만 쓰임 → RUNTIME-only.
+  # BUILD availability를 주면 빌드 SA가 secretAccessor 권한을 요구해
+  # 빌드 시 PermissionDenied 발생 (buildpacks #561 함정). 빌드는 키 불필요.
+  # 사전 1회: firebase apphosting:secrets:grantaccess <SECRET> --backend <BACKEND>
   - variable: DATA_GO_KR_API_KEY
     secret: DATA_GO_KR_API_KEY
     availability:
-      - BUILD
       - RUNTIME
 
   - variable: VWORLD_API_KEY
     secret: VWORLD_API_KEY
     availability:
-      - BUILD
       - RUNTIME
 
   # ─── 평문 환경변수 (비밀 아님) ─────────────────────────────────────
@@ -47,5 +49,3 @@ env:
     availability:
       - BUILD
       - RUNTIME
-
-# secrets-bootstrap.ts는 fallback으로 유지 — secret 매핑 실패 시 동작.

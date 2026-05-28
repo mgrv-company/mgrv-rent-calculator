@@ -2,17 +2,12 @@ import type { MolitTransaction } from "./molit-parser";
 import { apiCache, GEO_CACHE_TTL } from "./api-cache";
 
 // ─── V-World Referer (env 기반) ───────────────────────────────────────────────
-
-/**
- * V-World API 호출 시 보낼 Referer.
- * V-World 인증키는 발급 시 등록 도메인(Whitelist)을 강제 검증하므로,
- * 환경별로 다른 도메인을 박을 수 있게 env로 분리. default는 prod 도메인.
- *
- * - prod: `https://da-rent-mgrv.web.app` (apphosting.yaml에서 명시)
- * - 로컬: `.env.local`에 미설정 시 default(prod 도메인) 사용
- */
+//
+// V-World 인증키는 발급 시 등록 도메인(Whitelist)을 강제 검증하므로,
+// 환경별로 다른 도메인을 박을 수 있게 env로 분리. default는 prod 도메인.
+// App Hosting이 VWORLD_REFERER를 런타임 env로 주입(apphosting.yaml).
 export const VWORLD_REFERER =
-  process.env.VWORLD_REFERER ?? "https://da-rent-mgrv.web.app";
+  process.env.VWORLD_REFERER ?? "https://www.mangrove.city";
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
