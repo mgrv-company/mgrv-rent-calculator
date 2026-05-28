@@ -49,14 +49,13 @@ interface KakaoAddressResponse {
   documents?: KakaoAddressDocument[];
 }
 
-async function searchKakaoAddress(
+async function fetchKakao(
   query: string,
   apiKey: string,
 ): Promise<KakaoAddressDocument | null> {
   const url = new URL(KAKAO_ADDRESS_URL);
   url.searchParams.set("query", query);
   url.searchParams.set("size", "1");
-
   try {
     const res = await fetch(url.toString(), {
       signal: AbortSignal.timeout(KAKAO_TIMEOUT_MS),
@@ -68,6 +67,47 @@ async function searchKakaoAddress(
   } catch {
     return null;
   }
+}
+
+/**
+ * 카카오 v2 주소 검색이 "서울시 서대문구 서강로 121" 같은 verbose 한국식 풀-주소를
+ * 못 찾는 케이스가 흔함 (도로명+번지에 특화). 자동 폴백으로 매칭률 회복:
+ *
+ * 1. 원본 그대로
+ * 2. "서울시" → "서울특별시" 정규화
+ * 3. "서울(특별시)" 접두사 제거
+ * 4. 시군구까지 제거하고 도로명+번지만 (region이 서울인 경우만 채택)
+ */
+async function searchKakaoAddress(
+  query: string,
+  apiKey: string,
+): Promise<KakaoAddressDocument | null> {
+  // 1. 원본
+  let doc = await fetchKakao(query, apiKey);
+  if (doc) return doc;
+
+  // 2. "서울시" → "서울특별시"
+  const normalized = query.replace(/^서울시(\s|$)/, "서울특별시$1");
+  if (normalized !== query) {
+    doc = await fetchKakao(normalized, apiKey);
+    if (doc) return doc;
+  }
+
+  // 3. "서울(특별시)" 접두사 제거
+  const stripSido = query.replace(/^(서울특별시|서울시|서울)\s+/, "");
+  if (stripSido !== query) {
+    doc = await fetchKakao(stripSido, apiKey);
+    if (doc) return doc;
+  }
+
+  // 4. 시군구까지 제거 — region check로 서울만 채택
+  const stripGu = stripSido.replace(/^[가-힣]+구\s+/, "");
+  if (stripGu !== stripSido) {
+    doc = await fetchKakao(stripGu, apiKey);
+    if (doc?.address?.region_1depth_name === "서울") return doc;
+  }
+
+  return null;
 }
 
 export async function GET(
