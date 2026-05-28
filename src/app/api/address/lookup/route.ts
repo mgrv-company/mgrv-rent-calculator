@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import dns from "node:dns";
 import { extractLawdCd, lawdCdToGuName } from "@/lib/lawd-codes";
 import { VWORLD_REFERER } from "@/lib/geocoding";
+
+// IPv6 dual-stack 이슈 우회 — Cloud Run asia-east1 → api.vworld.kr 호출 시
+// AAAA가 우선 해석되면 일부 환경에서 라우팅 죽음 → IPv4 우선으로 강제.
+// node:dns의 setDefaultResultOrder는 module load 시 한 번만 호출하면 됨.
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 export interface AddressInfo {
   jibun: string;
@@ -17,7 +25,7 @@ interface AddressLookupResponse {
   error?: { code: string; message: string };
 }
 
-const VWORLD_TIMEOUT_MS = 5_000;
+const VWORLD_TIMEOUT_MS = 10_000;
 const VWORLD_SEARCH_URL = "https://api.vworld.kr/req/search";
 const VWORLD_ADDRESS_URL = "https://api.vworld.kr/req/address";
 
@@ -84,7 +92,17 @@ async function searchVworld(
       return data.response.result.items[0];
     }
   } catch (err) {
-    dbg.fetchError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    if (err instanceof Error) {
+      const cause = (err as Error & { cause?: unknown }).cause;
+      const causeStr = cause
+        ? typeof cause === "object"
+          ? JSON.stringify(cause, Object.getOwnPropertyNames(cause)).slice(0, 300)
+          : String(cause).slice(0, 300)
+        : "";
+      dbg.fetchError = `${err.name}: ${err.message}${causeStr ? ` | cause: ${causeStr}` : ""}`;
+    } else {
+      dbg.fetchError = String(err);
+    }
   }
   debugSink?.push(dbg);
   return null;
