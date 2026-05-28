@@ -34,10 +34,20 @@ interface VworldSearchItem {
   point: { x: string; y: string };
 }
 
+// 디버그 모드를 위한 V-World 호출 결과 캡처
+interface VworldDebug {
+  category: string;
+  httpStatus?: number;
+  vworldStatus?: string;
+  rawBody?: string;
+  fetchError?: string;
+}
+
 async function searchVworld(
   query: string,
   category: "parcel" | "road",
   apiKey: string,
+  debugSink?: VworldDebug[],
 ): Promise<VworldSearchItem | null> {
   const url = new URL(VWORLD_SEARCH_URL);
   url.searchParams.set("service", "search");
@@ -53,23 +63,30 @@ async function searchVworld(
   url.searchParams.set("query", query);
   url.searchParams.set("key", apiKey);
 
+  const dbg: VworldDebug = { category };
   try {
     const res = await fetch(url.toString(), {
       signal: AbortSignal.timeout(VWORLD_TIMEOUT_MS),
       headers: { Referer: VWORLD_REFERER },
     });
+    dbg.httpStatus = res.status;
+    const text = await res.text();
+    dbg.rawBody = text.slice(0, 500);
     const data: {
       response?: {
         status?: string;
         result?: { items?: VworldSearchItem[] };
       };
-    } = await res.json();
+    } = JSON.parse(text);
+    dbg.vworldStatus = data.response?.status;
     if (data.response?.status === "OK" && data.response.result?.items?.[0]) {
+      debugSink?.push(dbg);
       return data.response.result.items[0];
     }
-  } catch {
-    // V-World 일시 장애 — 호출자에서 다음 단계로 fallback
+  } catch (err) {
+    dbg.fetchError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
   }
+  debugSink?.push(dbg);
   return null;
 }
 
@@ -118,6 +135,8 @@ export async function GET(
   req: NextRequest,
 ): Promise<NextResponse<AddressLookupResponse>> {
   const q = req.nextUrl.searchParams.get("q")?.trim();
+  const debugMode = req.nextUrl.searchParams.get("debug") === "1";
+  const debugSink: VworldDebug[] = debugMode ? [] : [];
   if (!q) {
     return NextResponse.json(
       {
@@ -146,9 +165,9 @@ export async function GET(
   }
 
   // PARCEL → ROAD 순 폴백 (PRD §F1)
-  let item = await searchVworld(q, "parcel", apiKey);
+  let item = await searchVworld(q, "parcel", apiKey, debugSink);
   if (!item) {
-    item = await searchVworld(q, "road", apiKey);
+    item = await searchVworld(q, "road", apiKey, debugSink);
   }
   if (!item) {
     return NextResponse.json(
@@ -158,8 +177,9 @@ export async function GET(
           code: "NOT_FOUND",
           message:
             "주소를 찾을 수 없습니다. 지번 또는 도로명 형식을 확인하세요.",
+          ...(debugMode ? { debug: debugSink } : {}),
         },
-      },
+      } as AddressLookupResponse,
       { status: 404 },
     );
   }
